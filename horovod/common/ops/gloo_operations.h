@@ -26,6 +26,7 @@
 #include "gloo/types.h"
 #include "gloo/allgatherv.h"
 #include "gloo/allgather.h"
+#include "gloo/math.h"
 
 namespace horovod {
 namespace common {
