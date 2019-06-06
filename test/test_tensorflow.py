@@ -234,52 +234,54 @@ class MPITests(tf.test.TestCase):
         self.assertTrue(self.evaluate(tf.reduce_all(tests)),
                         "hvd.allreduce produces incorrect results")
 
-    def test_horovod_allreduce_multi_gpu(self):
-        """Test that the allreduce works on multiple GPUs.
 
-        This test will crash badly if used with an MPI implementation that does
-        not support GPU memory transfers directly, as it will call MPI_Send on
-        a GPU data pointer."""
-        # Only do this test if there are GPUs available.
-        if not tf.test.is_gpu_available(cuda_only=True):
-            return
+    # def test_horovod_allreduce_multi_gpu(self):
+    #     """Test that the allreduce works on multiple GPUs.
+    #
+    #     This test will crash badly if used with an MPI implementation that does
+    #     not support GPU memory transfers directly, as it will call MPI_Send on
+    #     a GPU data pointer."""
+    #     # Only do this test if there are GPUs available.
+    #     if not tf.test.is_gpu_available(cuda_only=True):
+    #         return
+    #
+    #     if os.environ.get('HOROVOD_MIXED_INSTALL'):
+    #         # Skip if compiled with CUDA but without HOROVOD_GPU_ALLREDUCE.
+    #         return
+    #
+    #     hvd.init()
+    #     local_rank = hvd.local_rank()
+    #     size = hvd.size()
+    #
+    #     iter = 0
+    #     gpu_ids = [local_rank * 2, local_rank * 2 + 1]
+    #     dtypes = [tf.int32, tf.int64, tf.float16, tf.float32, tf.float64]
+    #     dims = [1, 2, 3]
+    #     for dtype, dim in itertools.product(dtypes, dims):
+    #         iter += 1
+    #         with tf.device("/gpu:%d" % gpu_ids[(iter + local_rank) % 2]):
+    #             tf.set_random_seed(1234)
+    #             tensor = tf.random_uniform(
+    #                 [17] * dim, -100, 100, dtype=dtype)
+    #             summed = hvd.allreduce(tensor, average=False)
+    #         multiplied = tensor * size
+    #         max_difference = tf.reduce_max(tf.abs(summed - multiplied))
+    #
+    #         # Threshold for floating point equality depends on number of
+    #         # ranks, since we're comparing against precise multiplication.
+    #         if size <= 3 or dtype in [tf.int32, tf.int64]:
+    #             threshold = 0
+    #         elif size < 10:
+    #             threshold = 1e-4
+    #         elif size < 15:
+    #             threshold = 5e-4
+    #         else:
+    #             return
+    #
+    #         diff = self.evaluate(max_difference)
+    #         self.assertTrue(diff <= threshold,
+    #                         "hvd.allreduce on GPU produces incorrect results")
 
-        if os.environ.get('HOROVOD_MIXED_INSTALL'):
-            # Skip if compiled with CUDA but without HOROVOD_GPU_ALLREDUCE.
-            return
-
-        hvd.init()
-        local_rank = hvd.local_rank()
-        size = hvd.size()
-
-        iter = 0
-        gpu_ids = [local_rank * 2, local_rank * 2 + 1]
-        dtypes = [tf.int32, tf.int64, tf.float16, tf.float32, tf.float64]
-        dims = [1, 2, 3]
-        for dtype, dim in itertools.product(dtypes, dims):
-            iter += 1
-            with tf.device("/gpu:%d" % gpu_ids[(iter + local_rank) % 2]):
-                tf.set_random_seed(1234)
-                tensor = tf.random_uniform(
-                    [17] * dim, -100, 100, dtype=dtype)
-                summed = hvd.allreduce(tensor, average=False)
-            multiplied = tensor * size
-            max_difference = tf.reduce_max(tf.abs(summed - multiplied))
-
-            # Threshold for floating point equality depends on number of
-            # ranks, since we're comparing against precise multiplication.
-            if size <= 3 or dtype in [tf.int32, tf.int64]:
-                threshold = 0
-            elif size < 10:
-                threshold = 1e-4
-            elif size < 15:
-                threshold = 5e-4
-            else:
-                return
-
-            diff = self.evaluate(max_difference)
-            self.assertTrue(diff <= threshold,
-                            "hvd.allreduce on GPU produces incorrect results")
 
     def test_horovod_allreduce_error(self):
         """Test that the allreduce raises an error if different ranks try to
