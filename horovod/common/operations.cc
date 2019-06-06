@@ -489,17 +489,21 @@ ResponseList FuseResponses(std::deque<Response>& responses,
                            HorovodGlobalState& state, MPIContext& ctx) {
   ResponseList response_list;
   {
+    auto timeline = &horovod_global.timeline;
     // Protect access to tensor table.
     std::lock_guard<std::mutex> guard(horovod_global.mutex);
     while (!responses.empty()) {
 
       auto response = responses.front();
       assert(response.tensor_names().size() == 1);
+//      timeline->
+//      timeline->ActivityStartAll(response.tensor_names(), "Fuse Response");
       responses.pop_front();
       int64_t tensor_size = 0;
       if (response.response_type() == Response::ResponseType::ALLREDUCE) {
         // Attempt to add more responses to this fused response.
         auto& entry = state.tensor_table[response.tensor_names()[0]];
+        timeline->ActivityStart(response.tensor_names()[0], "Fuse Start");
         tensor_size = entry.tensor->size();
 
         std::deque<Response> skipped_responses;
@@ -536,12 +540,15 @@ ResponseList FuseResponses(std::deque<Response>& responses,
             }
           }
         }
-
+        timeline->ActivityEnd(response.tensor_names()[0]);
         // Replace any skipped responses.
+        timeline->ActivityStart(response.tensor_names()[0],"Fuse add back");
         while (!skipped_responses.empty()) {
           responses.push_front(std::move(skipped_responses.back()));
           skipped_responses.pop_back();
         }
+
+        timeline->ActivityEnd(response.tensor_names()[0]);
 
       } else if (response.response_type() ==
                  Response::ResponseType::ALLGATHER) {
@@ -1237,6 +1244,8 @@ void RunBypass(std::queue<Request>& message_queue, CacheCoordinator& cache_coord
   }
 
   // Fuse responses as normal.
+//  auto timeline = horovod_global.timeline;
+//  timeline.ActivityStart()
   auto response_list = FuseResponses(responses, state, ctx);
 
   if (!response_list.responses().empty()) {
