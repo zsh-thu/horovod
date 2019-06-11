@@ -59,7 +59,9 @@ void GlooAlgorithms<T>::Allreduce(void* buffer_data, int num_elements) {
   void (*func)(void*, const void*, const void*, size_t) = &::gloo::sum<T>;
   // set allreduce function
   opts.setReduceFunction(gloo::AllreduceOptions::Func(func));
-  opts.setMaxSegmentSize(512 * 1024);
+  auto segSize = std::getenv("GLOO_SEG_SIZE");
+
+  opts.setMaxSegmentSize(std::strtol(segSize, nullptr, 10)*1024*1024);
   gloo::allreduce(opts);
 }
 
