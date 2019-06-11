@@ -59,9 +59,8 @@ void GlooAlgorithms<T>::Allreduce(void* buffer_data, int num_elements) {
   void (*func)(void*, const void*, const void*, size_t) = &::gloo::sum<T>;
   // set allreduce function
   opts.setReduceFunction(gloo::AllreduceOptions::Func(func));
-  auto segSize = std::getenv("GLOO_SEG_SIZE");
 
-  opts.setMaxSegmentSize(std::strtol(segSize, nullptr, 10)*1024*1024);
+  opts.setMaxSegmentSize(32*1024*1024);
   gloo::allreduce(opts);
 }
 
@@ -122,8 +121,6 @@ Status GlooAllreduce::Execute(std::vector<TensorTableEntry>& entries,
   timeline.ActivityStartAll(entries, GLOO_ALLREDUCE);
   std::unique_ptr<IGlooAlgorithms> gloo_algos(
       GetAlgorithmsForType(first_entry.tensor->dtype(), gloo_context_));
-  timeline.ActivityEndAll(entries);
-  timeline.ActivityStartAll(entries, GLOO_ALLREDUCE);
   gloo_algos->Allreduce(buffer_data, num_elements);
   timeline.ActivityEndAll(entries);
 
