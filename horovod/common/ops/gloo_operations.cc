@@ -120,6 +120,8 @@ Status GlooAllreduce::Execute(std::vector<TensorTableEntry>& entries,
   timeline.ActivityStartAll(entries, GLOO_ALLREDUCE);
   std::unique_ptr<IGlooAlgorithms> gloo_algos(
       GetAlgorithmsForType(first_entry.tensor->dtype(), gloo_context_));
+  timeline.ActivityEndAll(entries);
+  timeline.ActivityStartAll(entries, GLOO_ALLREDUCE);
   gloo_algos->Allreduce(buffer_data, num_elements);
   timeline.ActivityEndAll(entries);
 

@@ -56,6 +56,7 @@ namespace common {
 #define GLOO_ALLREDUCE "GLOO_ALLREDUCE"
 #define GLOO_ALLGATHER "GLOO_ALLGATHER"
 #define GLOO_BCAST "GLOO_BCAST"
+#define GLOO_ALLREDUCE_INIT "GLOO ALLREDUCE INIT"
 
 // Device ID used for CPU.
 #define CPU_DEVICE_ID (-1)
