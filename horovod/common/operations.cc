@@ -155,6 +155,7 @@ OperationManager* CreateOperationManager(HorovodGlobalState& state) {
 
 #else
 #if HAVE_NCCL && HOROVOD_GPU_ALLREDUCE == 'N'
+  LOG(INFO) << "NCCL enabled.";
   allreduce_ops.push_back(
       std::shared_ptr<AllreduceOp>(new NCCLHierarchicalAllreduce(
           &nccl_context, &mpi_context, &cuda_context, &state)));
@@ -162,6 +163,7 @@ OperationManager* CreateOperationManager(HorovodGlobalState& state) {
       new NCCLAllreduce(&nccl_context, &mpi_context, &cuda_context, &state)));
 
 #elif HAVE_DDL && HOROVOD_GPU_ALLREDUCE == 'D'
+  LOG(INFO) << "DDL enabled.";
   allreduce_ops.push_back(std::shared_ptr<AllreduceOp>(
       new DDLAllreduce(&ddl_context, &cuda_context, &state)));
 #endif
@@ -172,10 +174,8 @@ OperationManager* CreateOperationManager(HorovodGlobalState& state) {
 #endif
 
 #if HAVE_GLOO
-  if (!gloo_context.data_transfer_enabled) {
-    std::cout << "GLOO disabled.\n";
-  } else {
-    std::cout << "GLOO enabled.\n";
+  if (strcasecmp(state.cpu_operation.c_str(), "gloo") == 0) {
+    LOG(INFO) << "GLOO enabled.";
     allreduce_ops.push_back(
         std::shared_ptr<AllreduceOp>(new GlooAllreduce(&gloo_context, &state)));
     allgather_ops.push_back(
@@ -186,13 +186,17 @@ OperationManager* CreateOperationManager(HorovodGlobalState& state) {
 #endif
 
 #if HAVE_MLSL
-  allreduce_ops.push_back(
-      std::shared_ptr<AllreduceOp>(new MLSLAllreduce(&mlsl_context, &state)));
-  allgather_ops.push_back(std::shared_ptr<AllgatherOp>(
-      new MLSLAllgather(&mlsl_context, &mpi_context, &state)));
-  broadcast_ops.push_back(
-      std::shared_ptr<BroadcastOp>(new MLSLBroadcast(&mlsl_context, &state)));
-#else
+  if (strcasecmp(state.cpu_operation.c_str(), "mlsl") == 0) {
+    LOG(INFO) << "MLSL enabled.";
+    allreduce_ops.push_back(
+        std::shared_ptr<AllreduceOp>(new MLSLAllreduce(&mlsl_context, &state)));
+    allgather_ops.push_back(std::shared_ptr<AllgatherOp>(
+        new MLSLAllgather(&mlsl_context, &mpi_context, &state)));
+    broadcast_ops.push_back(
+        std::shared_ptr<BroadcastOp>(new MLSLBroadcast(&mlsl_context, &state)));
+  }
+#endif
+
   // Default operations, always enabled but last to be checked.
   allreduce_ops.push_back(
       std::shared_ptr<AllreduceOp>(new MPIAllreduce(&mpi_context, &state)));
@@ -200,7 +204,7 @@ OperationManager* CreateOperationManager(HorovodGlobalState& state) {
       std::shared_ptr<AllgatherOp>(new MPIAllgather(&mpi_context, &state)));
   broadcast_ops.push_back(
       std::shared_ptr<BroadcastOp>(new MPIBroadcast(&mpi_context, &state)));
-#endif
+
   std::shared_ptr<ErrorOp> error_op(new ErrorOp(&state));
 
   return new OperationManager(&state.param_manager, allreduce_ops,
@@ -1170,26 +1174,44 @@ void BackgroundThreadLoop(HorovodGlobalState& state, MPIContext& ctx) {
     state.message_table = std::unique_ptr<MessageTable>(new MessageTable());
   }
 
-#if HAVE_GLOO
-  auto data_layer = std::getenv("HOROVOD_CPU_OPERATIONS");
-  auto control_layer = std::getenv("HOROVOD_CONTROL_OPERATIONS");
+  state.cpu_operation = HOROVOD_MPI;
 
-  bool gloo_data, gloo_control;
-  if (data_layer != nullptr && strcasecmp(data_layer, "gloo") == 0) {
-    gloo_data = true;
-  } else {
-    gloo_data = false;
+#if HAVE_MLSL
+  state.cpu_operation = HOROVOD_MLSL;
+#endif
+
+  // If specified by admin during compiling
+#if HOROVOD_CPU_OPERATIONS_DEFAULT == 'P'
+  state.cpu_operation = HOROVOD_MPI;
+#elif HOROVOD_CPU_OPERATIONS_DEFAULT == 'G'
+  LOG(INFO) << "Gloo!!!!!!";
+  state.cpu_operation = HOROVOD_GLOO;
+#elif HOROVOD_CPU_OPERATIONS_DEFAULT == 'M'
+  state.cpu_operation = HOROVOD_MLSL;
+#endif
+
+  // If specified by user during runtime
+  const char* user_cpu_operation = std::getenv(HOROVOD_CPU_OPERATIONS);
+  if (user_cpu_operation != nullptr) {
+    if (strcasecmp(user_cpu_operation, HOROVOD_MPI) == 0) {
+      state.cpu_operation = HOROVOD_MPI;
+    }
+    else if (strcasecmp(user_cpu_operation, HOROVOD_GLOO) == 0) {
+      state.cpu_operation = HOROVOD_GLOO;
+    }
+    else if (strcasecmp(user_cpu_operation, HOROVOD_MLSL) == 0) {
+      state.cpu_operation = HOROVOD_MLSL;
+    }
   }
-  if (control_layer != nullptr && strcasecmp(control_layer, "gloo") == 0) {
-    gloo_control = true;
-  } else {
-    gloo_control = false;
+
+#if HAVE_GLOO
+  if (strcasecmp(state.cpu_operation.c_str(), "gloo") == 0) {
+    auto gloo_iface = std::getenv(HOROVOD_GLOO_IFACE);
+    if (gloo_iface == nullptr) {
+      gloo_iface = GLOO_DEFAULT_IFACE;
+    }
+    gloo_context.InitializeFromMPI(ctx.mpi_comm, gloo_iface);
   }
-  auto gloo_iface = std::getenv("HOROVOD_GLOO_IFACE");
-  if (gloo_iface == nullptr) {
-    gloo_iface = "eth0";
-  }
-  gloo_context.Initialize(ctx.mpi_comm, gloo_data, gloo_control, gloo_iface);
 #endif
 
   op_manager.reset(CreateOperationManager(state));
