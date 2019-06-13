@@ -459,7 +459,7 @@ Response ConstructResponse(std::unique_ptr<MessageTable>& message_table,
 // Return the total byte size of the final allgathered output tensor
 int64_t TotalByteSizeOfAllgatherOutput(const std::vector<int64_t>& tensor_sizes,
                                        const TensorTableEntry entry,
-                                      std::unique_ptr<Controller>& controller) {
+                                      std::shared_ptr<Controller>& controller) {
   int64_t total_dimension_size = 0;
   for (auto sz : tensor_sizes) {
     total_dimension_size += sz;
@@ -932,9 +932,6 @@ void BackgroundThreadLoop(HorovodGlobalState& state) {
   // installed.
   state.controller->Initialize();
 
-  // Create custom datatypes for the parameter manager.
-  state.param_manager.CreateMpiTypes();
-
   // Open the timeline file on coordinator.
   auto horovod_timeline = std::getenv(HOROVOD_TIMELINE);
 
@@ -1049,15 +1046,16 @@ void BackgroundThreadLoop(HorovodGlobalState& state) {
   if (horovod_autotune != nullptr &&
       std::strtol(horovod_autotune, nullptr, 10) > 0) {
     auto horovod_autotune_log = std::getenv(HOROVOD_AUTOTUNE_LOG);
-    state.param_manager.Initialize(
-        state.controller->GetRank(), RANK_ZERO,horovod_autotune_log != nullptr ? std::string
-    (horovod_autotune_log) : "");
+    state.param_manager.Initialize(state.controller->GetRank(), RANK_ZERO,
+                                   horovod_autotune_log != nullptr
+                                       ? std::string(horovod_autotune_log)
+                                       : "",state.controller);
     state.param_manager.SetAutoTuning(true);
   }
 
   // Initialize the tensor count table. No tensors are available yet.
   if (is_coordinator) {
-    state.message_table = std::make_unique<MessageTable>(new MessageTable());
+    state.message_table = std::unique_ptr<MessageTable>(new MessageTable());
   }
 
   state.controller->set_cpu_operation(HOROVOD_MPI);
@@ -1067,12 +1065,12 @@ void BackgroundThreadLoop(HorovodGlobalState& state) {
 #endif
 
   // If specified by admin during compiling
-#if HOROVOD_CPU_OPERATIONS_DEFAULT == 'P'
-  state.cpu_operation = HOROVOD_MPI;
-#elif HOROVOD_CPU_OPERATIONS_DEFAULT == 'G'
-  state.cpu_operation = HOROVOD_GLOO;
-#elif HOROVOD_CPU_OPERATIONS_DEFAULT == 'M'
-  state.cpu_operation = HOROVOD_MLSL;
+#if HOROVOD_CPU_OPERATIONS == 'P'
+  state.controller->set_cpu_operation(HOROVOD_MPI);
+#elif HOROVOD_CPU_OPERATIONS == 'G'
+  state.controller->set_cpu_operation(HOROVOD_GLOO);
+#elif HOROVOD_CPU_OPERATIONS == 'M'
+  state.controller->set_cpu_operation(HOROVOD_MLSL);
 #endif
 
   // If specified by user during runtime
@@ -1090,12 +1088,19 @@ void BackgroundThreadLoop(HorovodGlobalState& state) {
   }
 
 #if HAVE_GLOO
-  if (strcasecmp(state.cpu_operation.c_str(), "gloo") == 0) {
-    auto gloo_iface = std::getenv(HOROVOD_GLOO_IFACE);
+  if (strcasecmp(state.cpu_operation.c_str(), "gloo") == 0){
+    const char* gloo_iface = std::getenv(HOROVOD_GLOO_IFACE);
     if (gloo_iface == nullptr) {
       gloo_iface = GLOO_DEFAULT_IFACE;
     }
-    gloo_context.InitializeFromMPI(ctx.mpi_comm, gloo_iface);
+
+    if (horovod_global.controller->GetControllerType() ==
+    Controller::ControllerType::MPI){
+      MPIController *mpiController = (MPIController*)horovod_global
+          .controller.get();
+      gloo_context.InitializeFromMPI(mpiController->GetMPIContext().mpi_comm,
+          gloo_iface);
+    }
   }
 #endif
 
@@ -1426,6 +1431,7 @@ bool RunLoopOnce(HorovodGlobalState& state, bool is_coordinator) {
 
         bool reduce = IncrementTensorCount(state.message_table,
                                            received_message, state.controller->GetSize());
+
         if (reduce) {
           ready_to_reduce.push_back(received_name);
         }
@@ -1576,7 +1582,7 @@ void InitializeHorovodOnce(const int* ranks, int nranks) {
   // Ensure background thread is only started once.
   if (!horovod_global.initialize_flag.test_and_set()) {
 
-    horovod_global.controller = std::unique_ptr<Controller>(new MPIController
+    horovod_global.controller = std::shared_ptr<Controller>(new MPIController
         ());
 
     horovod_global.controller->SetRank(ranks, nranks);
@@ -1603,7 +1609,7 @@ comm) {
   // Ensure background thread is only started once.
   if (!horovod_global.initialize_flag.test_and_set()) {
 
-    horovod_global.controller = std::unique_ptr<Controller>(new MPIController
+    horovod_global.controller = std::shared_ptr<Controller>(new MPIController
                                                                 ());
 
     horovod_global.controller->SetRank(ranks, nranks);
