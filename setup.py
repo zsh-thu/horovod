@@ -1159,7 +1159,7 @@ setup(name='horovod',
       # If cffi is specified in setup_requires, it will need libffi to be installed on the machine,
       # which is undesirable.  Luckily, `install` action will install cffi before executing build,
       # so it's only necessary for `build*` or `bdist*` actions.
-      setup_requires=setup_require_list if is_build_action() else [],
+      setup_requires=require_list if is_build_action() else [],
       install_requires=require_list,
       zip_safe=False,
       scripts=['bin/horovodrun'])
